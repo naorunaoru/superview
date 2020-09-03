@@ -134,41 +134,80 @@ func GeneratePGM(video *VideoSpecs, squeeze bool) error {
 	wX.WriteString(fmt.Sprintf("P2 %d %d 65535\n", outX, outY))
 	wY.WriteString(fmt.Sprintf("P2 %d %d 65535\n", outX, outY))
 
+	// parameters for correction
+	paramA := 0.0001                         // affects only the outermost pixels of the image
+	paramB := 0.02                           // most cases only require b optimization
+	paramC := 0.4                            // most uniform correction
+	paramD := 1.0 - paramA - paramB - paramC // describes the linear scaling of the image
+
 	for y := 0; y < outY; y++ {
 		for x := 0; x < outX; x++ {
-			sx := float64(x) - float64(outX-video.Streams[0].Width)/2.0 // x - width diff/2
-			tx := (float64(x)/float64(outX) - 0.5) * 2.0                // (x/width - 0.5) * 2
+			d := math.Min(float64(outX), float64(outY)) / 2.0
 
-			var offset float64
+			centerX := (outX - 1) / 2.0
+			centerY := (outY - 1) / 2.0
 
-			if squeeze {
-				inv := 1 - math.Abs(tx)
+			deltaX := float64(x-centerX) / d
+			deltaY := float64(y-centerY) / d
 
-				offset = inv*(float64((outX/16)*7)/2.0) - math.Pow((inv/16)*7, 2)*(float64((outX/7)*16)/2.0)
+			dstR := math.Sqrt(deltaX*deltaX + deltaY*deltaY)
 
-				if tx < 0 {
-					offset *= -1
-				}
+			srcR := (paramA*dstR*dstR*dstR + paramB*dstR*dstR + paramC*dstR + paramD) * dstR
 
-				wX.WriteString(strconv.Itoa(int(sx + offset)))
-			} else {
-				offset = math.Pow(tx, 2) * (float64(outX-video.Streams[0].Width) / 2.0) // tx^2 * width diff/2
-
-				if tx < 0 {
-					offset *= -1
-				}
-
-				wX.WriteString(strconv.Itoa(int(sx - offset)))
+			if srcR == 0 {
+				srcR = 1
 			}
 
-			wX.WriteString(" ")
+			factor := math.Abs(dstR / srcR)
 
-			wY.WriteString(strconv.Itoa(y))
+			srcXd := float64(centerX) + (deltaX * factor * d)
+			srcYd := float64(centerY) + (deltaY * factor * d)
+
+			wX.WriteString(strconv.Itoa(int(srcXd)))
+			wX.WriteString(" ")
+			wY.WriteString(strconv.Itoa(int(srcYd)))
 			wY.WriteString(" ")
 		}
+
 		wX.WriteString("\n")
 		wY.WriteString("\n")
 	}
+
+	// for y := 0; y < outY; y++ {
+	// 	for x := 0; x < outX; x++ {
+	// 		sx := float64(x) - float64(outX-video.Streams[0].Width)/2.0 // x - width diff/2
+	// 		tx := (float64(x)/float64(outX) - 0.5) * 2.0                // (x/width - 0.5) * 2
+
+	// 		var offset float64
+
+	// 		if squeeze {
+	// 			inv := 1 - math.Abs(tx)
+
+	// 			offset = inv*(float64((outX/16)*7)/2.0) - math.Pow((inv/16)*7, 2)*(float64((outX/7)*16)/2.0)
+
+	// 			if tx < 0 {
+	// 				offset *= -1
+	// 			}
+
+	// 			wX.WriteString(strconv.Itoa(int(sx + offset)))
+	// 		} else {
+	// 			offset = math.Pow(tx, 2) * (float64(outX-video.Streams[0].Width) / 2.0) // tx^2 * width diff/2
+
+	// 			if tx < 0 {
+	// 				offset *= -1
+	// 			}
+
+	// 			wX.WriteString(strconv.Itoa(int(sx - offset)))
+	// 		}
+
+	// 		wX.WriteString(" ")
+
+	// 		wY.WriteString(strconv.Itoa(y))
+	// 		wY.WriteString(" ")
+	// 	}
+	// 	wX.WriteString("\n")
+	// 	wY.WriteString("\n")
+	// }
 
 	wX.Flush()
 	wY.Flush()
